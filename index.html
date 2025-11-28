@@ -400,7 +400,7 @@
         window.exportPriceListToTxt = () => {
             const prices = window.appState.prices;
             const names = Object.keys(prices).sort();
-            let content = "";
+            let content = ""; // Empty content, only names
 
             if (names.length > 0) {
                 names.forEach(name => {
@@ -428,7 +428,7 @@
                 htmlContent = htmlContent.replace(regex, `// -- DATA_MARKER_START --\n        ${dataString}\n        // -- DATA_MARKER_END --`);
                 const blob = new Blob([htmlContent], { type: 'text/html' });
                 downloadBlob(blob, `EVE_Factory_App_${getDateStr()}.html`);
-                alert('App completa descargada.');
+                alert('App completa descargada. Contiene tus datos actuales.');
             } else {
                 alert('Error al generar la app.');
             }
