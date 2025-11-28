@@ -128,7 +128,7 @@
                             <div>
                                 <label class="block text-xs text-gray-400 mb-1 uppercase">Estructura / Rig Bonus (%)</label>
                                 <input type="number" id="structureBonus" min="0" max="100" step="0.1" class="eve-input w-full rounded p-2 text-right font-bold" oninput="triggerSave()">
-                                <p class="text-xs text-gray-600 mt-1">1% HighSec / 4.2% NullSec (aprox)</p>
+                                <p class="text-xs text-gray-600 mt-1">Dejar en 0 si no tienes bonus</p>
                             </div>
 
                             <div>
@@ -305,7 +305,7 @@
                     "name": "Antimatter Charge M",
                     "yield": 100,
                     "me": 10,
-                    "structure": 1,
+                    "structure": 0, /* UPDATED: Changed from 1 to 0 for pure ME calculation */
                     "installCost": 500,
                     "sellPrice": 25,
                     "materials": [
@@ -554,16 +554,9 @@
 
         // --- FIX: SAFE BLUEPRINT SWITCHING ---
         window.switchBlueprint = (id) => {
-            // 1. Force update of the *current* blueprint (old ID) from the UI values before switching
             calculate(); 
-            
-            // 2. Switch the active ID
             window.appState.currentId = id;
-
-            // 3. Update the UI with the *new* blueprint's values
             loadCurrentBlueprintInUI();
-            
-            // 4. Save the new state (currentId updated) to storage
             saveToLocal();
         };
 
@@ -571,7 +564,6 @@
             const name = prompt("Nombre del nuevo Blueprint:");
             if (!name) return;
             
-            // Save state of current BP before creating new one
             calculate();
             
             const newId = 'bp_' + Date.now();
@@ -580,7 +572,7 @@
                 name, 
                 yield: 1, 
                 me: 0, 
-                structure: 1.0, 
+                structure: 0.0, /* UPDATED: Changed default to 0.0 */
                 installCost: 1000, 
                 sellPrice: 0, 
                 materials: []
@@ -687,18 +679,15 @@
             triggerSave();
         };
 
+        // --- UPDATED CALCULATE FUNCTION ---
         window.calculate = () => {
             const bp = getCurrentBP();
             
-            // This function maps the DOM values to the current Blueprint Object
-            // It ensures ME, Yield, Structure, InstallCost, and SellPrice are saved PER BLUEPRINT
             bp.me = parseInt(document.getElementById('meLevel').value) || 0;
             bp.yield = parseInt(document.getElementById('baseYield').value) || 1;
             bp.structure = parseFloat(document.getElementById('structureBonus').value) || 0;
             bp.installCost = parseFloat(document.getElementById('installCost').value) || 0;
             bp.sellPrice = parseFloat(document.getElementById('sellPrice').value) || 0;
-            
-            // Tax is global
             window.appState.tax = parseFloat(document.getElementById('salesTax').value) || 0;
             
             const runs = parseInt(document.getElementById('jobRuns').value) || 1;
@@ -707,8 +696,12 @@
             bp.materials.forEach((mat, index) => {
                 const meFactor = 1 - (bp.me / 100);
                 const structFactor = 1 - (bp.structure / 100);
-                let reqPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
-                let totalReq = reqPerRun * runs;
+                
+                // CORRECT FORMULA: Round up based on TOTAL job quantity, not per run
+                // Total Requirement = Max(Runs, Ceil(BaseQty * Runs * ME_Modifier * Structure_Modifier))
+                
+                let totalBase = mat.qty * runs;
+                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
                 
                 const cost = totalReq * (window.appState.prices[mat.name] || 0);
                 totalMatCost += cost;
