@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EVE Factory: Standalone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
+        
+        body { font-family: 'Rajdhani', sans-serif; background-color: #0d1117; color: #c9d1d9; }
+        .eve-input { background-color: #161b22; border: 1px solid #30363d; color: #58a6ff; font-family: 'Roboto Mono', monospace; transition: all 0.2s; }
+        .eve-input:focus { outline: none; border-color: #58a6ff; box-shadow: 0 0 5px rgba(88, 166, 255, 0.3); }
+        .eve-card { background: linear-gradient(145deg, #161b22 0%, #0d1117 100%); border: 1px solid #30363d; }
+        .stat-value { font-family: 'Roboto Mono', monospace; }
+        .btn-action { transition: all 0.2s; }
+        .btn-action:hover { transform: translateY(-1px); }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
+        
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+        .status-saved { background-color: #2ea043; }
+        .status-saving { background-color: #e3b341; animation: pulse 1s infinite; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        /* Tab Styles */
+        .tab-btn { border-bottom: 2px solid transparent; }
+        .tab-btn.active { border-bottom-color: #58a6ff; color: white; }
+
+        /* FIX: Dropdown readability in dark mode */
+        #blueprintSelector option {
+            background-color: #1f2937; /* Tailwind gray-800 */
+            color: white;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 pb-20">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-6 flex flex-col md:flex-row items-center justify-between border-b border-gray-700 pb-4 gap-4">
+            <div class="flex items-center gap-4 w-full md:w-auto">
+                <div class="w-12 h-12 bg-blue-900/30 rounded flex items-center justify-center border border-blue-500/50">
+                    <i class="fa-solid fa-industry text-2xl text-blue-400"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-white tracking-wide">EVE FACTORY</h1>
+                    <div class="flex items-center text-xs font-mono uppercase tracking-widest text-gray-400 mt-1">
+                        <span id="statusIndicator" class="status-dot status-saved"></span>
+                        <span id="statusText" class="text-gray-400 text-xs font-mono uppercase tracking-widest">Guardado Local</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+                 <button onclick="exportData()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-3 py-2 rounded text-sm btn-action flex items-center gap-2" title="Guardar solo los datos (.json)">
+                    <i class="fa-solid fa-file-export"></i> <span class="hidden sm:inline">JSON</span>
+                </button>
+                
+                <label class="bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-3 py-2 rounded text-sm btn-action flex items-center gap-2 cursor-pointer" title="Cargar datos (.json)">
+                    <i class="fa-solid fa-file-import"></i> <span class="hidden sm:inline">Cargar JSON</span>
+                    <input type="file" id="fileInput" class="hidden" accept=".json" onchange="importData(this)">
+                </label>
+
+                <button onclick="downloadFullApp()" class="bg-blue-600 hover:bg-blue-500 text-white border border-blue-400 px-3 py-2 rounded text-sm btn-action flex items-center gap-2 shadow-lg shadow-blue-900/50 ml-2">
+                    <i class="fa-solid fa-download"></i> <span class="font-bold">Guardar Todo (.html)</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="flex gap-6 mb-6 border-b border-gray-800 text-sm font-bold uppercase tracking-wider">
+            <button onclick="switchView('calculator')" id="tab-calculator" class="tab-btn active pb-2 text-gray-400 hover:text-white transition">
+                <i class="fa-solid fa-calculator mr-2"></i> Calculadora
+            </button>
+            <button onclick="switchView('prices')" id="tab-prices" class="tab-btn pb-2 text-gray-400 hover:text-white transition">
+                <i class="fa-solid fa-coins mr-2"></i> Gestión de Precios
+            </button>
+        </div>
+
+        <div id="view-calculator" class="transition-opacity duration-300">
+            <div class="flex items-center gap-2 w-full bg-gray-800/50 p-3 rounded-lg border border-gray-700 mb-6">
+                <span class="text-gray-400 text-sm font-bold ml-2">PLANO ACTIVO:</span>
+                <select id="blueprintSelector" onchange="switchBlueprint(this.value)" class="bg-gray-800 text-white font-bold outline-none flex-grow cursor-pointer text-lg p-1 rounded border border-gray-700/50 focus:border-blue-500"></select>
+                <div class="h-6 w-px bg-gray-600 mx-2"></div>
+                <button onclick="createNewBlueprint()" class="text-blue-400 hover:text-white px-2 py-1 rounded text-sm btn-action" title="Crear Nuevo">
+                    <i class="fa-solid fa-plus fa-lg"></i>
+                </button>
+                <button onclick="deleteCurrentBlueprint()" class="text-red-500 hover:text-white px-2 py-1 rounded text-sm btn-action" title="Borrar Actual">
+                    <i class="fa-solid fa-trash fa-lg"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <div class="lg:col-span-4 space-y-6">
+                    
+                    <div class="eve-card rounded-lg p-5 shadow-lg relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full -mr-8 -mt-8 pointer-events-none"></div>
+                        <h2 class="text-lg font-bold text-white mb-4 flex items-center border-b border-gray-700 pb-2">
+                            <i class="fa-solid fa-sliders mr-2 text-gray-400"></i> Configuración BPO
+                        </h2>
+                        
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1 uppercase">ME Level</label>
+                                    <input type="number" id="meLevel" min="0" max="10" class="eve-input w-full rounded p-2 text-center font-bold text-lg" oninput="triggerSave()">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1 uppercase">Output (Yield)</label>
+                                    <input type="number" id="baseYield" min="1" class="eve-input w-full rounded p-2 text-center font-bold text-lg" oninput="triggerSave()">
+                                    <p class="text-[10px] text-gray-500 text-center mt-1">Unidades por Run</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1 uppercase">Estructura / Rig Bonus (%)</label>
+                                <input type="number" id="structureBonus" min="0" max="100" step="0.1" class="eve-input w-full rounded p-2 text-right font-bold" oninput="triggerSave()">
+                                <p class="text-xs text-gray-600 mt-1">1% HighSec / 4.2% NullSec (aprox)</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1 uppercase">Coste Instalación (Job Cost)</label>
+                                <input type="number" id="installCost" min="0" class="eve-input w-full rounded p-2 text-right font-bold text-yellow-500" oninput="triggerSave()">
+                            </div>
+
+                            <div class="pt-4 border-t border-gray-700">
+                                 <label class="block text-xs text-gray-400 mb-1 uppercase">Runs Totales</label>
+                                <input type="number" id="jobRuns" min="1" value="1" class="eve-input w-full rounded p-2 text-right font-bold text-white bg-blue-900/20 border-blue-500/30" oninput="triggerSave()">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="eve-card rounded-lg p-5 shadow-lg">
+                        <h2 class="text-lg font-bold text-white mb-4 flex items-center border-b border-gray-700 pb-2">
+                            <i class="fa-solid fa-shop mr-2 text-gray-400"></i> Mercado (Venta)
+                        </h2>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1 uppercase">Precio Venta Unitario</label>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-2 text-gray-500">ISK</span>
+                                    <input type="number" id="sellPrice" step="0.01" class="eve-input w-full rounded p-2 pl-10 text-right font-bold text-green-400" oninput="triggerSave()">
+                                </div>
+                            </div>
+                            
+                             <div class="flex items-center justify-between gap-4">
+                                 <div class="w-1/2">
+                                    <label class="block text-xs text-gray-400 mb-1 uppercase">Impuestos %</label>
+                                    <input type="number" id="salesTax" value="3.6" step="0.1" class="eve-input w-full rounded p-2 text-right font-bold" oninput="triggerSave()">
+                                 </div>
+                                 <div class="w-1/2 text-right pt-4">
+                                     <p class="text-xs text-gray-500">Neto tras impuestos</p>
+                                     <p id="netSellPriceDisplay" class="font-mono text-sm text-gray-300">0.00</p>
+                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-8 space-y-6">
+                    
+                    <div class="eve-card rounded-lg p-5 shadow-lg min-h-[400px]">
+                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-white flex items-center">
+                                    <i class="fa-solid fa-cubes mr-2 text-gray-400"></i> Materiales
+                                </h2>
+                                <p class="text-xs text-gray-500">Define los materiales para 1 Run.</p>
+                            </div>
+                            
+                            <div class="flex gap-2 w-full md:w-auto bg-gray-900/50 p-2 rounded border border-gray-700">
+                                <input type="text" id="newMatName" list="materialSuggestions" placeholder="Nombre (ej: Tritanium)" class="eve-input w-full md:w-32 px-2 py-1 text-sm rounded">
+                                <datalist id="materialSuggestions"></datalist>
+                                
+                                <input type="number" id="newMatQty" placeholder="Cant." class="eve-input w-20 px-2 py-1 text-sm rounded">
+                                <button onclick="addMaterialFromInput()" class="bg-green-600 hover:bg-green-500 text-white px-3 rounded btn-action">
+                                    <i class="fa-solid fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead>
+                                    <tr class="text-gray-500 border-b border-gray-700 text-xs uppercase tracking-wider">
+                                        <th class="pb-2 pl-2">Material</th>
+                                        <th class="pb-2 text-center w-24">Base Qty</th>
+                                        <th class="pb-2 text-center w-24">Req. (ME)</th>
+                                        <th class="pb-2 text-right w-32">Precio (Jita)</th>
+                                        <th class="pb-2 text-right w-32">Coste</th>
+                                        <th class="pb-2 w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="materialsTable" class="divide-y divide-gray-800">
+                                    </tbody>
+                            </table>
+                        </div>
+
+                        <div class="mt-6 flex justify-end items-center border-t border-gray-700 pt-4">
+                             <div class="text-right">
+                                 <span class="text-gray-400 text-sm uppercase mr-2">Coste Total Materiales:</span>
+                                 <span class="text-xl font-bold stat-value text-blue-400" id="totalMatCost">0.00</span>
+                             </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        
+                        <div class="eve-card rounded-lg p-4 border-t-4 border-t-red-500 bg-gray-900/50">
+                            <h3 class="text-gray-400 text-xs uppercase mb-1">Coste Unitario</h3>
+                            <div class="text-2xl font-bold text-white stat-value truncate" id="costPerUnit">0.00</div>
+                            <div class="text-[10px] text-gray-500">Materiales + Instalación</div>
+                        </div>
+
+                        <div class="eve-card rounded-lg p-4 border-t-4 border-t-green-500 bg-gray-900/50">
+                            <h3 class="text-gray-400 text-xs uppercase mb-1">Beneficio Unitario</h3>
+                            <div class="text-2xl font-bold stat-value truncate text-gray-500" id="profitPerUnit">0.00</div>
+                            <div class="text-[10px] text-gray-500">Margen: <span id="marginPercent">0%</span></div>
+                        </div>
+
+                        <div class="eve-card rounded-lg p-4 border-t-4 border-t-blue-500 bg-gray-900/50">
+                            <h3 class="text-gray-400 text-xs uppercase mb-1">Beneficio Total Job</h3>
+                            <div class="text-2xl font-bold stat-value truncate text-gray-500" id="totalJobProfit">0.00</div>
+                            <div class="text-[10px] text-gray-500">Para <span id="displayTotalRuns">1</span> runs</div>
+                        </div>
+
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div id="view-prices" class="hidden">
+            <div class="eve-card rounded-lg p-5 shadow-lg max-w-4xl mx-auto">
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-white flex items-center mb-2">
+                        <i class="fa-solid fa-coins mr-2 text-gray-400"></i> Listado Global de Materiales
+                    </h2>
+                    <p class="text-sm text-gray-400">Edita aquí los precios de todos los materiales utilizados en tus blueprints. Los cambios se aplicarán automáticamente a todos los cálculos.</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-800 text-gray-400 uppercase text-xs font-bold">
+                            <tr>
+                                <th class="p-3">Nombre del Material</th>
+                                <th class="p-3 text-right">Precio Actual (ISK)</th>
+                                <th class="p-3 text-right">Usado en (BPs)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="globalPriceTable" class="divide-y divide-gray-700">
+                            </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-6 flex justify-end border-t border-gray-700 pt-4">
+                    <button onclick="exportPriceListToTxt()" class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-500 px-4 py-2 rounded text-sm btn-action flex items-center gap-2">
+                        <i class="fa-solid fa-file-lines"></i> Copiar Nombres (.txt)
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="mt-12 text-center text-xs text-gray-600 border-t border-gray-800 pt-4 pb-8">
+            <p>100% Local. Sin conexiones a internet. Usa "Guardar Todo (.html)" para conservar tus datos de forma segura.</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- GLOBAL STATE ---
+        // -- DATA_MARKER_START --
+        window.appState = {
+            "currentId": "antimatter_m",
+            "tax": 3.6,
+            "blueprints": [
+                {
+                    "id": "antimatter_m",
+                    "name": "Antimatter Charge M",
+                    "yield": 100,
+                    "me": 10,
+                    "structure": 1,
+                    "installCost": 500,
+                    "sellPrice": 25,
+                    "materials": [
+                        { "name": "Tritanium", "qty": 449 },
+                        { "name": "Pyerite", "qty": 417 },
+                        { "name": "Mexallon", "qty": 7 }
+                    ]
+                }
+            ],
+            "prices": {
+                "Tritanium": 6,
+                "Pyerite": 10,
+                "Mexallon": 110
+            }
+        };
+        // -- DATA_MARKER_END --
+
+        let saveTimeout;
+
+        // --- INIT ---
+        function initApp() {
+            const saved = localStorage.getItem('eve_factory_local');
+            if (saved) {
+                try {
+                    const loaded = JSON.parse(saved);
+                    window.appState = { ...window.appState, ...loaded };
+                } catch(e) { console.error("Error loading local save"); }
+            }
+            renderApp();
+            loadCurrentBlueprintInUI();
+            updateMaterialDatalist();
+            updateStatus('saved');
+        }
+
+        // --- NAVIGATION LOGIC ---
+        window.switchView = (viewName) => {
+            const calcView = document.getElementById('view-calculator');
+            const priceView = document.getElementById('view-prices');
+            const tabCalc = document.getElementById('tab-calculator');
+            const tabPrice = document.getElementById('tab-prices');
+
+            if (viewName === 'calculator') {
+                calcView.classList.remove('hidden');
+                priceView.classList.add('hidden');
+                tabCalc.classList.add('active');
+                tabPrice.classList.remove('active');
+                loadCurrentBlueprintInUI();
+            } else {
+                calcView.classList.add('hidden');
+                priceView.classList.remove('hidden');
+                tabCalc.classList.remove('active');
+                tabPrice.classList.add('active');
+                renderPriceList();
+            }
+        };
+
+        // --- AUTOCOMPLETE LOGIC ---
+        window.updateMaterialDatalist = () => {
+            const datalist = document.getElementById('materialSuggestions');
+            if (!datalist) return;
+            datalist.innerHTML = '';
+            
+            const knownMaterials = Object.keys(window.appState.prices || {}).sort();
+            
+            knownMaterials.forEach(mat => {
+                const opt = document.createElement('option');
+                opt.value = mat;
+                datalist.appendChild(opt);
+            });
+        };
+
+        // --- PRICE LIST LOGIC ---
+        window.renderPriceList = () => {
+            const tbody = document.getElementById('globalPriceTable');
+            tbody.innerHTML = '';
+
+            const allMaterials = new Set(Object.keys(window.appState.prices));
+            window.appState.blueprints.forEach(bp => {
+                bp.materials.forEach(m => allMaterials.add(m.name));
+            });
+
+            const sortedMats = Array.from(allMaterials).sort();
+
+            if (sortedMats.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">No hay materiales registrados.</td></tr>';
+                return;
+            }
+
+            sortedMats.forEach(matName => {
+                const price = window.appState.prices[matName] || 0;
+                
+                const usedInCount = window.appState.blueprints.filter(bp => 
+                    bp.materials.some(m => m.name === matName)
+                ).length;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/5 transition";
+                tr.innerHTML = `
+                    <td class="p-3 font-medium text-gray-300">${matName}</td>
+                    <td class="p-3 text-right">
+                        <input type="number" step="0.01" value="${price}" 
+                            onchange="updateGlobalPrice('${matName}', this.value)"
+                            class="eve-input w-32 rounded px-2 py-1 text-right text-sm font-bold text-white">
+                    </td>
+                    <td class="p-3 text-right text-gray-500 font-mono">${usedInCount} BPs</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        };
+
+        // --- EXPORT TXT LOGIC (UPDATED: ONLY NAMES) ---
+        window.exportPriceListToTxt = () => {
+            const prices = window.appState.prices;
+            const names = Object.keys(prices).sort();
+            let content = "";
+
+            if (names.length > 0) {
+                names.forEach(name => {
+                    content += `${name}\n`;
+                });
+            }
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            downloadBlob(blob, `nombres_materiales_eve_${getDateStr()}.txt`);
+        };
+
+        // --- EXPORT / IMPORT LOGIC ---
+        window.exportData = () => {
+            const dataStr = JSON.stringify(window.appState, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            downloadBlob(blob, `eve_data_${getDateStr()}.json`);
+        };
+
+        window.downloadFullApp = () => {
+            let htmlContent = document.documentElement.outerHTML;
+            const dataString = `window.appState = ${JSON.stringify(window.appState, null, 4)};`;
+            const regex = /\/\/\s*--\s*DATA_MARKER_START\s*--[\s\S]*?\/\/\s*--\s*DATA_MARKER_END\s*--/;
+            
+            if (regex.test(htmlContent)) {
+                htmlContent = htmlContent.replace(regex, `// -- DATA_MARKER_START --\n        ${dataString}\n        // -- DATA_MARKER_END --`);
+                const blob = new Blob([htmlContent], { type: 'text/html' });
+                downloadBlob(blob, `EVE_Factory_App_${getDateStr()}.html`);
+                alert('App completa descargada.');
+            } else {
+                alert('Error al generar la app.');
+            }
+        };
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function getDateStr() {
+            return new Date().toISOString().split('T')[0];
+        }
+
+        window.importData = (input) => {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.blueprints && data.prices) {
+                        if (confirm('¿Cargar datos? Se sobrescribirá la configuración actual.')) {
+                            window.appState = data;
+                            if (typeof window.appState.tax === 'undefined') window.appState.tax = 3.6;
+                            
+                            saveToLocal();
+                            renderApp();
+                            loadCurrentBlueprintInUI();
+                            updateMaterialDatalist(); 
+                            if(!document.getElementById('view-prices').classList.contains('hidden')){
+                                renderPriceList();
+                            }
+                            alert('Datos cargados correctamente.');
+                        }
+                    } else {
+                        alert('Archivo inválido.');
+                    }
+                } catch (err) {
+                    alert('Error al leer JSON.');
+                }
+            };
+            reader.readAsText(file);
+            input.value = ''; 
+        };
+
+        // --- DATA PERSISTENCE ---
+        window.triggerSave = () => {
+            calculate();
+            updateStatus('saving');
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                saveToLocal();
+            }, 1000);
+        };
+
+        function saveToLocal() {
+            localStorage.setItem('eve_factory_local', JSON.stringify(window.appState));
+            updateStatus('saved');
+        }
+
+        // --- UI & LOGIC ---
+        function updateStatus(status) {
+            const dot = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+
+            dot.className = 'status-dot';
+            
+            if (status === 'saved') {
+                dot.classList.add('status-saved');
+                text.innerText = 'Guardado Local';
+                text.className = 'text-gray-400 text-xs font-mono uppercase tracking-widest';
+            } else if (status === 'saving') {
+                dot.classList.add('status-saving');
+                text.innerText = 'Guardando...';
+                text.className = 'text-yellow-500 text-xs font-mono uppercase tracking-widest';
+            }
+        }
+
+        function getCurrentBP() {
+            return window.appState.blueprints.find(bp => bp.id === window.appState.currentId) || window.appState.blueprints[0];
+        }
+
+        function updateBlueprintSelector() {
+            const select = document.getElementById('blueprintSelector');
+            select.innerHTML = '';
+            window.appState.blueprints.forEach(bp => {
+                const opt = document.createElement('option');
+                opt.value = bp.id;
+                opt.innerText = bp.name;
+                opt.className = "bg-gray-800 text-white";
+                select.appendChild(opt);
+            });
+            select.value = window.appState.currentId;
+        }
+
+        window.switchBlueprint = (id) => {
+            window.appState.currentId = id;
+            triggerSave(); 
+            loadCurrentBlueprintInUI();
+        };
+
+        window.createNewBlueprint = () => {
+            const name = prompt("Nombre del nuevo Blueprint:");
+            if (!name) return;
+            const newId = 'bp_' + Date.now();
+            window.appState.blueprints.push({
+                id: newId, name, yield: 1, me: 0, structure: 1.0, installCost: 1000, sellPrice: 0, materials: []
+            });
+            window.appState.currentId = newId;
+            saveToLocal();
+            updateBlueprintSelector();
+            loadCurrentBlueprintInUI();
+        };
+
+        window.deleteCurrentBlueprint = () => {
+            if (window.appState.blueprints.length <= 1) return alert("Mínimo 1 blueprint.");
+            if (!confirm("¿Borrar blueprint actual?")) return;
+            window.appState.blueprints = window.appState.blueprints.filter(bp => bp.id !== window.appState.currentId);
+            window.appState.currentId = window.appState.blueprints[0].id;
+            saveToLocal();
+            updateBlueprintSelector();
+            loadCurrentBlueprintInUI();
+        };
+
+        window.addMaterialFromInput = () => {
+            const nameInput = document.getElementById('newMatName');
+            const name = nameInput.value.trim();
+            const qty = parseInt(document.getElementById('newMatQty').value);
+            if (!name || isNaN(qty)) return;
+            
+            const bp = getCurrentBP();
+            bp.materials.push({ name, qty });
+            if (window.appState.prices[name] === undefined) {
+                window.appState.prices[name] = 0;
+                updateMaterialDatalist(); 
+            }
+            
+            saveToLocal();
+            renderMaterialsTable();
+            calculate();
+            nameInput.value = '';
+            document.getElementById('newMatQty').value = '';
+        };
+
+        window.removeMaterial = (index) => {
+            getCurrentBP().materials.splice(index, 1);
+            saveToLocal();
+            renderMaterialsTable();
+            calculate();
+        };
+
+        function loadCurrentBlueprintInUI() {
+            const bp = getCurrentBP();
+            document.getElementById('meLevel').value = bp.me;
+            document.getElementById('baseYield').value = bp.yield;
+            document.getElementById('structureBonus').value = bp.structure;
+            document.getElementById('installCost').value = bp.installCost;
+            document.getElementById('sellPrice').value = bp.sellPrice;
+            document.getElementById('salesTax').value = window.appState.tax;
+            document.getElementById('jobRuns').value = 1;
+            renderMaterialsTable();
+            calculate();
+        }
+
+        function renderMaterialsTable() {
+            const bp = getCurrentBP();
+            const tbody = document.getElementById('materialsTable');
+            tbody.innerHTML = '';
+            
+            bp.materials.forEach((mat, index) => {
+                const price = window.appState.prices[mat.name] || 0;
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/5 group transition text-xs md:text-sm";
+                tr.innerHTML = `
+                    <td class="py-2 pl-2 font-medium text-gray-300">${mat.name}</td>
+                    <td class="text-center">
+                        <input type="number" value="${mat.qty}" onchange="updateMatBaseQty(${index}, this.value)"
+                           class="bg-gray-800 border border-gray-700 rounded w-16 text-center text-xs focus:border-blue-500 outline-none text-gray-400">
+                    </td>
+                    <td class="text-center font-bold text-white font-mono" id="req-qty-${index}">0</td>
+                    <td class="text-right">
+                        <input type="number" step="0.01" value="${price}" onchange="updateGlobalPrice('${mat.name}', this.value)"
+                            class="eve-input w-24 rounded px-2 py-1 text-right text-xs">
+                    </td>
+                    <td class="text-right text-gray-400 font-mono" id="row-cost-${index}">0.00</td>
+                    <td class="text-center">
+                        <button onclick="removeMaterial(${index})" class="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><i class="fa-solid fa-times"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.renderApp = () => {
+            updateBlueprintSelector();
+        };
+
+        window.updateMatBaseQty = (idx, val) => {
+            getCurrentBP().materials[idx].qty = parseFloat(val);
+            triggerSave();
+        };
+
+        window.updateGlobalPrice = (name, val) => {
+            window.appState.prices[name] = parseFloat(val);
+            triggerSave();
+        };
+
+        window.calculate = () => {
+            const bp = getCurrentBP();
+            
+            bp.me = parseInt(document.getElementById('meLevel').value) || 0;
+            bp.yield = parseInt(document.getElementById('baseYield').value) || 1;
+            bp.structure = parseFloat(document.getElementById('structureBonus').value) || 0;
+            bp.installCost = parseFloat(document.getElementById('installCost').value) || 0;
+            bp.sellPrice = parseFloat(document.getElementById('sellPrice').value) || 0;
+            window.appState.tax = parseFloat(document.getElementById('salesTax').value) || 0;
+            
+            const runs = parseInt(document.getElementById('jobRuns').value) || 1;
+            let totalMatCost = 0;
+
+            bp.materials.forEach((mat, index) => {
+                const meFactor = 1 - (bp.me / 100);
+                const structFactor = 1 - (bp.structure / 100);
+                let reqPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
+                let totalReq = reqPerRun * runs;
+                
+                const cost = totalReq * (window.appState.prices[mat.name] || 0);
+                totalMatCost += cost;
+
+                const reqEl = document.getElementById(`req-qty-${index}`);
+                const costEl = document.getElementById(`row-cost-${index}`);
+                if (reqEl) reqEl.innerText = totalReq.toLocaleString();
+                if (costEl) costEl.innerText = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2 }).format(cost);
+            });
+
+            const totalJobCost = totalMatCost + bp.installCost;
+            const totalProduced = bp.yield * runs;
+            const costPerUnit = totalJobCost / totalProduced;
+            
+            const netSell = bp.sellPrice * (1 - (window.appState.tax / 100));
+            const profitPerUnit = netSell - costPerUnit;
+            const totalProfit = profitPerUnit * totalProduced;
+            const margin = bp.sellPrice > 0 ? (profitPerUnit / bp.sellPrice) * 100 : 0;
+
+            document.getElementById('totalMatCost').innerText = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2 }).format(totalMatCost);
+            document.getElementById('costPerUnit').innerText = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2 }).format(costPerUnit);
+            document.getElementById('netSellPriceDisplay').innerText = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2 }).format(netSell);
+            document.getElementById('displayTotalRuns').innerText = runs;
+
+            const profitEl = document.getElementById('profitPerUnit');
+            profitEl.innerText = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2 }).format(profitPerUnit);
+            profitEl.className = `text-2xl font-bold stat-value truncate ${profitPerUnit >= 0 ? 'text-green-400' : 'text-red-500'}`;
+            
+            const jobEl = document.getElementById('totalJobProfit');
+            jobEl.innerText = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2 }).format(totalProfit);
+            jobEl.className = `text-2xl font-bold stat-value truncate ${totalProfit >= 0 ? 'text-green-400' : 'text-red-500'}`;
+
+            const marginEl = document.getElementById('marginPercent');
+            marginEl.innerText = margin.toFixed(1) + '%';
+            marginEl.className = margin > 0 ? 'text-green-400' : 'text-red-500';
+        };
+
+        initApp();
+    </script>
+</body>
+</html>
