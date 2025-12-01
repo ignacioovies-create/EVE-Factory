@@ -38,6 +38,9 @@
             background-color: #1f2937; /* Tailwind gray-800 */
             color: white;
         }
+        
+        /* Table row hover effect for Summary */
+        .summary-row:hover { background-color: rgba(255,255,255,0.05); }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8 pb-20">
@@ -76,12 +79,15 @@
         </header>
 
         <!-- Navigation Tabs -->
-        <div class="flex gap-6 mb-6 border-b border-gray-800 text-sm font-bold uppercase tracking-wider">
-            <button onclick="switchView('calculator')" id="tab-calculator" class="tab-btn active pb-2 text-gray-400 hover:text-white transition">
+        <div class="flex gap-6 mb-6 border-b border-gray-800 text-sm font-bold uppercase tracking-wider overflow-x-auto">
+            <button onclick="switchView('calculator')" id="tab-calculator" class="tab-btn active pb-2 text-gray-400 hover:text-white transition whitespace-nowrap">
                 <i class="fa-solid fa-calculator mr-2"></i> Calculadora
             </button>
-            <button onclick="switchView('prices')" id="tab-prices" class="tab-btn pb-2 text-gray-400 hover:text-white transition">
+            <button onclick="switchView('prices')" id="tab-prices" class="tab-btn pb-2 text-gray-400 hover:text-white transition whitespace-nowrap">
                 <i class="fa-solid fa-coins mr-2"></i> Gestión de Precios
+            </button>
+            <button onclick="switchView('summary')" id="tab-summary" class="tab-btn pb-2 text-gray-400 hover:text-white transition whitespace-nowrap">
+                <i class="fa-solid fa-list-check mr-2"></i> Resumen
             </button>
         </div>
 
@@ -287,6 +293,35 @@
                 </div>
             </div>
         </div>
+
+        <!-- VIEW: SUMMARY -->
+        <div id="view-summary" class="hidden">
+            <div class="eve-card rounded-lg p-5 shadow-lg max-w-5xl mx-auto">
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-white flex items-center mb-2">
+                        <i class="fa-solid fa-list-check mr-2 text-gray-400"></i> Resumen de Rentabilidad
+                    </h2>
+                    <p class="text-sm text-gray-400">Comparativa rápida de todos tus blueprints. Haz clic en el nombre para cargar la calculadora.</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-800 text-gray-400 uppercase text-xs font-bold">
+                            <tr>
+                                <th class="p-3">Blueprint (Producto)</th>
+                                <th class="p-3 text-right">Coste/Ud</th>
+                                <th class="p-3 text-right">Precio Venta</th>
+                                <th class="p-3 text-right">Beneficio/Ud</th>
+                                <th class="p-3 text-right">Margen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summaryTable" class="divide-y divide-gray-700">
+                            <!-- Rendered JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
         
         <footer class="mt-12 text-center text-xs text-gray-600 border-t border-gray-800 pt-4 pb-8">
             <p>100% Local. Sin conexiones a internet. Usa "Guardar Todo (.html)" para conservar tus datos de forma segura.</p>
@@ -344,22 +379,111 @@
         window.switchView = (viewName) => {
             const calcView = document.getElementById('view-calculator');
             const priceView = document.getElementById('view-prices');
+            const summaryView = document.getElementById('view-summary');
+            
             const tabCalc = document.getElementById('tab-calculator');
             const tabPrice = document.getElementById('tab-prices');
+            const tabSum = document.getElementById('tab-summary');
 
+            // Hide all
+            calcView.classList.add('hidden');
+            priceView.classList.add('hidden');
+            summaryView.classList.add('hidden');
+            
+            // Deactivate tabs
+            tabCalc.classList.remove('active');
+            tabPrice.classList.remove('active');
+            tabSum.classList.remove('active');
+
+            // Show selected
             if (viewName === 'calculator') {
                 calcView.classList.remove('hidden');
-                priceView.classList.add('hidden');
                 tabCalc.classList.add('active');
-                tabPrice.classList.remove('active');
                 loadCurrentBlueprintInUI();
-            } else {
-                calcView.classList.add('hidden');
+            } else if (viewName === 'prices') {
                 priceView.classList.remove('hidden');
-                tabCalc.classList.remove('active');
                 tabPrice.classList.add('active');
                 renderPriceList();
+            } else if (viewName === 'summary') {
+                summaryView.classList.remove('hidden');
+                tabSum.classList.add('active');
+                renderSummaryTable();
             }
+        };
+
+        // --- NEW: SUMMARY & NAVIGATION HELPER ---
+        window.selectBlueprintAndSwitch = (id) => {
+            switchBlueprint(id);
+            switchView('calculator');
+        };
+
+        // Helper: Pure calculation for non-active blueprints
+        function getBlueprintStats(bp) {
+            const runs = 1; // Standardize to 1 run for unit comparison
+            const tax = window.appState.tax || 0;
+            
+            let totalMatCost = 0;
+            bp.materials.forEach(mat => {
+                const meFactor = 1 - ((bp.me || 0) / 100);
+                const structFactor = 1 - ((bp.structure || 0) / 100);
+                
+                let totalBase = mat.qty * runs;
+                // Use same formula as main calculator
+                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
+                
+                const price = window.appState.prices[mat.name] || 0;
+                totalMatCost += totalReq * price;
+            });
+
+            const installCost = bp.installCost || 0;
+            const totalJobCost = totalMatCost + installCost;
+            const totalProduced = (bp.yield || 1) * runs;
+            const costPerUnit = totalJobCost / totalProduced;
+            
+            const sellPrice = bp.sellPrice || 0;
+            const netSell = sellPrice * (1 - (tax / 100));
+            const profitPerUnit = netSell - costPerUnit;
+            const margin = sellPrice > 0 ? (profitPerUnit / sellPrice) * 100 : 0;
+
+            return { profitPerUnit, margin, costPerUnit, sellPrice, netSell };
+        }
+
+        window.renderSummaryTable = () => {
+            const tbody = document.getElementById('summaryTable');
+            tbody.innerHTML = '';
+
+            const bps = window.appState.blueprints || [];
+            if (bps.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay blueprints registrados.</td></tr>';
+                return;
+            }
+
+            // Sort by name alphabetically
+            bps.sort((a, b) => a.name.localeCompare(b.name));
+
+            bps.forEach(bp => {
+                const stats = getBlueprintStats(bp);
+                const isProfitable = stats.profitPerUnit >= 0;
+                const profitClass = isProfitable ? 'text-green-400' : 'text-red-500';
+                
+                const tr = document.createElement('tr');
+                tr.className = "summary-row transition border-b border-gray-800";
+                
+                const fmt = (num) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+
+                tr.innerHTML = `
+                    <td class="p-3">
+                        <button onclick="selectBlueprintAndSwitch('${bp.id}')" class="font-bold text-blue-400 hover:text-white hover:underline text-left">
+                            ${bp.name}
+                        </button>
+                    </td>
+                    <td class="p-3 text-right font-mono text-gray-400">${fmt(stats.costPerUnit)}</td>
+                    <td class="p-3 text-right font-mono text-gray-300">${fmt(stats.sellPrice)}</td>
+                    <td class="p-3 text-right font-mono font-bold ${profitClass}">${fmt(stats.profitPerUnit)}</td>
+                    <td class="p-3 text-right font-mono text-sm ${profitClass}">${stats.margin.toFixed(1)}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
         };
 
         // --- AUTOCOMPLETE LOGIC ---
@@ -486,9 +610,11 @@
                             renderApp();
                             loadCurrentBlueprintInUI();
                             updateMaterialDatalist(); 
-                            if(!document.getElementById('view-prices').classList.contains('hidden')){
-                                renderPriceList();
-                            }
+                            // Refresh view if needed
+                            const activeTab = document.querySelector('.tab-btn.active');
+                            if (activeTab.id === 'tab-prices') renderPriceList();
+                            if (activeTab.id === 'tab-summary') renderSummaryTable();
+
                             alert('Datos cargados correctamente.');
                         }
                     } else {
