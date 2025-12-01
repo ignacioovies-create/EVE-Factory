@@ -340,7 +340,7 @@
                     "name": "Antimatter Charge M",
                     "yield": 100,
                     "me": 10,
-                    "structure": 0, /* UPDATED: Changed from 1 to 0 for pure ME calculation */
+                    "structure": 0,
                     "installCost": 500,
                     "sellPrice": 25,
                     "materials": [
@@ -354,7 +354,8 @@
                 "Tritanium": 6,
                 "Pyerite": 10,
                 "Mexallon": 110
-            }
+            },
+            "lockedPrices": {} // NEW: Stores lock state of prices
         };
         // -- DATA_MARKER_END --
 
@@ -369,6 +370,11 @@
                     window.appState = { ...window.appState, ...loaded };
                 } catch(e) { console.error("Error loading local save"); }
             }
+            // Ensure lockedPrices exists
+            if (!window.appState.lockedPrices) {
+                window.appState.lockedPrices = {};
+            }
+
             renderApp();
             loadCurrentBlueprintInUI();
             updateMaterialDatalist();
@@ -501,7 +507,18 @@
             });
         };
 
-        // --- PRICE LIST LOGIC ---
+        // --- NEW: PRICE LOCK LOGIC ---
+        window.togglePriceLock = (matName) => {
+            if (!window.appState.lockedPrices) window.appState.lockedPrices = {};
+            
+            const isLocked = window.appState.lockedPrices[matName];
+            window.appState.lockedPrices[matName] = !isLocked;
+            
+            saveToLocal();
+            renderPriceList();
+        };
+
+        // --- PRICE LIST LOGIC (Updated with Locks) ---
         window.renderPriceList = () => {
             const tbody = document.getElementById('globalPriceTable');
             tbody.innerHTML = '';
@@ -520,19 +537,29 @@
 
             sortedMats.forEach(matName => {
                 const price = window.appState.prices[matName] || 0;
-                
                 const usedInCount = window.appState.blueprints.filter(bp => 
                     bp.materials.some(m => m.name === matName)
                 ).length;
+                
+                // Lock Logic
+                const isLocked = window.appState.lockedPrices && window.appState.lockedPrices[matName];
+                const lockIcon = isLocked ? 'fa-lock' : 'fa-lock-open';
+                const lockColor = isLocked ? 'text-red-500 hover:text-red-400' : 'text-gray-500 hover:text-white';
+                const inputState = isLocked ? 'disabled class="eve-input w-32 rounded px-2 py-1 text-right text-sm font-bold text-white opacity-50 cursor-not-allowed"' : 'class="eve-input w-32 rounded px-2 py-1 text-right text-sm font-bold text-white"';
 
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-white/5 transition";
                 tr.innerHTML = `
                     <td class="p-3 font-medium text-gray-300">${matName}</td>
                     <td class="p-3 text-right">
-                        <input type="number" step="0.01" value="${price}" 
-                            onchange="updateGlobalPrice('${matName}', this.value)"
-                            class="eve-input w-32 rounded px-2 py-1 text-right text-sm font-bold text-white">
+                        <div class="flex items-center justify-end gap-2">
+                            <input type="number" step="0.01" value="${price}" 
+                                onchange="updateGlobalPrice('${matName}', this.value)"
+                                ${inputState}>
+                            <button onclick="togglePriceLock('${matName}')" class="${lockColor} transition px-2" title="${isLocked ? 'Desbloquear' : 'Bloquear'}">
+                                <i class="fa-solid ${lockIcon}"></i>
+                            </button>
+                        </div>
                     </td>
                     <td class="p-3 text-right text-gray-500 font-mono">${usedInCount} BPs</td>
                 `;
@@ -698,7 +725,7 @@
                 name, 
                 yield: 1, 
                 me: 0, 
-                structure: 0.0, /* UPDATED: Changed default to 0.0 */
+                structure: 0.0,
                 installCost: 1000, 
                 sellPrice: 0, 
                 materials: []
@@ -762,6 +789,7 @@
             calculate();
         }
 
+        // --- UPDATED RENDER FUNCTION WITH LOCK CHECK ---
         function renderMaterialsTable() {
             const bp = getCurrentBP();
             const tbody = document.getElementById('materialsTable');
@@ -769,6 +797,13 @@
             
             bp.materials.forEach((mat, index) => {
                 const price = window.appState.prices[mat.name] || 0;
+                
+                // Check lock status
+                const isLocked = window.appState.lockedPrices && window.appState.lockedPrices[mat.name];
+                const inputState = isLocked 
+                    ? 'disabled class="eve-input w-24 rounded px-2 py-1 text-right text-xs opacity-50 cursor-not-allowed" title="Precio bloqueado en Gestión de Precios"' 
+                    : 'class="eve-input w-24 rounded px-2 py-1 text-right text-xs"';
+
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-white/5 group transition text-xs md:text-sm";
                 tr.innerHTML = `
@@ -780,7 +815,7 @@
                     <td class="text-center font-bold text-white font-mono" id="req-qty-${index}">0</td>
                     <td class="text-right">
                         <input type="number" step="0.01" value="${price}" onchange="updateGlobalPrice('${mat.name}', this.value)"
-                            class="eve-input w-24 rounded px-2 py-1 text-right text-xs">
+                            ${inputState}>
                     </td>
                     <td class="text-right text-gray-400 font-mono" id="row-cost-${index}">0.00</td>
                     <td class="text-center">
