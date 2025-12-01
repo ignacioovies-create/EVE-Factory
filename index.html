@@ -707,9 +707,20 @@
 
         // --- FIX: SAFE BLUEPRINT SWITCHING ---
         window.switchBlueprint = (id) => {
+            // 1. Save state of current BP (old ID)
             calculate(); 
+            
+            // 2. Switch the active ID
             window.appState.currentId = id;
+
+            // 3. FORCE UPDATE THE DROPDOWN VISUAL TO MATCH NEW ID
+            const selector = document.getElementById('blueprintSelector');
+            if (selector) selector.value = id;
+
+            // 4. Update the UI inputs with the *new* blueprint's values
             loadCurrentBlueprintInUI();
+            
+            // 5. Save
             saveToLocal();
         };
 
