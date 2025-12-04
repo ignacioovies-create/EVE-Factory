@@ -178,7 +178,8 @@
                             <!-- Tags Input -->
                             <div>
                                 <label class="block text-xs text-gray-400 mb-1 uppercase">Etiquetas</label>
-                                <input type="text" id="tags" placeholder="Separadas por comas (ej: ammo, small)" class="eve-input w-full rounded p-2" oninput="triggerSave()">
+                                <input type="text" id="tags" list="tagSuggestions" placeholder="Separadas por comas (ej: ammo, small)" class="eve-input w-full rounded p-2" oninput="handleTagInput(this)">
+                                <datalist id="tagSuggestions"></datalist>
                                 <p class="text-xs text-gray-600 mt-1">Para organizar/filtrar en el resumen</p>
                             </div>
 
@@ -1031,7 +1032,67 @@
             });
         }
 
-        // --- AUTOCOMPLETE LOGIC ---
+        // --- NEW: TAG AUTOCOMPLETE HELPERS ---
+        window.getUniqueTags = () => {
+            const allTags = new Set();
+            window.appState.blueprints.forEach(bp => {
+                if (bp.tags) {
+                    bp.tags.forEach(tag => allTags.add(tag));
+                }
+            });
+            return Array.from(allTags).sort();
+        };
+
+        window.handleTagInput = (input) => {
+            const val = input.value;
+            const allTags = getUniqueTags();
+            const datalist = document.getElementById('tagSuggestions');
+            
+            const lastCommaIndex = val.lastIndexOf(',');
+            let prefix = "";
+            let currentTerm = val;
+            
+            if (lastCommaIndex !== -1) {
+                prefix = val.substring(0, lastCommaIndex + 1);
+                currentTerm = val.substring(lastCommaIndex + 1);
+            }
+            
+            // Allow matching tags that start with the trimmed current term
+            const cleanTerm = currentTerm.trim();
+            
+            datalist.innerHTML = '';
+            
+            if (cleanTerm.length === 0) {
+                 // Suggest all if nothing typed after comma (optional, but good for discovery)
+                 allTags.forEach(tag => {
+                     const opt = document.createElement('option');
+                     // Maintain spacing convention: if user typed "tag1, ", suggest "tag1, tag2"
+                     // Default to adding a space after comma if not present in prefix
+                     let suggestion = prefix;
+                     if(prefix.endsWith(',') && !prefix.endsWith(', ')) suggestion += ' ';
+                     
+                     suggestion += tag;
+                     opt.value = suggestion;
+                     datalist.appendChild(opt);
+                 });
+            } else {
+                allTags.forEach(tag => {
+                    if (tag.toLowerCase().startsWith(cleanTerm.toLowerCase())) {
+                        const opt = document.createElement('option');
+                        // Use the user's current spacing prefix
+                        // e.g. prefix="ammo," currentTerm=" hy" -> suggestion="ammo, hybrid"
+                        // We preserve the prefix exactly, and match the current term's leading whitespace
+                        const leadingSpace = (currentTerm.match(/^\s*/) || [''])[0];
+                        opt.value = prefix + leadingSpace + tag;
+                        datalist.appendChild(opt);
+                    }
+                });
+            }
+
+            triggerSave();
+        };
+
+        // --- AUTOCOMPLETE LOGIC (Legacy Material) ---
         window.updateMaterialDatalist = () => {
             const datalist = document.getElementById('materialSuggestions');
             if (!datalist) return;
@@ -1407,6 +1468,7 @@
             
             // Save tags
             const tagsInput = document.getElementById('tags').value;
+            // Use regex to split by comma, allowing whitespace around commas
             bp.tags = tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag);
             
             bp.me = parseInt(document.getElementById('meLevel').value) || 0;
