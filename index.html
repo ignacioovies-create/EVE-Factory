@@ -35,12 +35,36 @@
 
         /* FIX: Dropdown readability in dark mode */
         #blueprintSelector option {
-            background-color: #1f2937; /* Tailwind gray-800 */
+            background-color: #1f2937;
             color: white;
         }
         
         /* Table row hover effect for Summary */
         .summary-row:hover { background-color: rgba(255,255,255,0.05); }
+        
+        /* Chart container */
+        .chart-container { height: 200px; position: relative; }
+        
+        /* Tag styling */
+        .tag { background: rgba(88, 166, 255, 0.1); border: 1px solid rgba(88, 166, 255, 0.3); }
+        
+        /* Advanced mode toggle */
+        .toggle-switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #30363d; transition: .4s; border-radius: 24px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .toggle-slider { background-color: #58a6ff; }
+        input:checked + .toggle-slider:before { transform: translateX(26px); }
+        
+        /* Sorting arrows */
+        .sortable { cursor: pointer; }
+        .sortable:hover { color: #58a6ff; }
+        .sort-arrow { margin-left: 4px; font-size: 0.8em; }
+        
+        /* CSV import styling */
+        .csv-preview { max-height: 300px; overflow-y: auto; }
+        .csv-row { border-bottom: 1px solid #30363d; }
+        .csv-row:hover { background: rgba(88, 166, 255, 0.1); }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8 pb-20">
@@ -106,6 +130,15 @@
                 </button>
             </div>
 
+            <!-- Advanced Mode Toggle -->
+            <div class="flex items-center justify-end gap-2 mb-4">
+                <span class="text-xs text-gray-400">Modo Avanzado</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="advancedModeToggle" onchange="toggleAdvancedMode()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 
                 <!-- LEFT COLUMN: Settings & Inputs -->
@@ -140,6 +173,13 @@
                             <div>
                                 <label class="block text-xs text-gray-400 mb-1 uppercase">Coste Instalación (Job Cost)</label>
                                 <input type="number" id="installCost" min="0" class="eve-input w-full rounded p-2 text-right font-bold text-yellow-500" oninput="triggerSave()">
+                            </div>
+
+                            <!-- NEW: Tags Input -->
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1 uppercase">Etiquetas</label>
+                                <input type="text" id="tags" placeholder="Separadas por comas (ej: ammo, small, hybrid)" class="eve-input w-full rounded p-2" oninput="triggerSave()">
+                                <p class="text-xs text-gray-600 mt-1">Para organizar/filtrar en el resumen</p>
                             </div>
 
                             <div class="pt-4 border-t border-gray-700">
@@ -204,6 +244,7 @@
                             </div>
                         </div>
 
+                        <!-- Materials Table -->
                         <div class="overflow-x-auto">
                             <table class="w-full text-left text-sm">
                                 <thead>
@@ -220,6 +261,29 @@
                                     <!-- Rendered by JS -->
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Advanced Materials Breakdown (Hidden by default) -->
+                        <div id="advancedBreakdown" class="hidden mt-6 border-t border-gray-700 pt-4">
+                            <h3 class="text-lg font-bold text-white mb-3">Desglose Detallado por Run</h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead>
+                                        <tr class="text-gray-500 border-b border-gray-700 uppercase tracking-wider">
+                                            <th class="pb-2 pl-2">Material</th>
+                                            <th class="pb-2 text-center">Base/Run</th>
+                                            <th class="pb-2 text-center">Mod ME</th>
+                                            <th class="pb-2 text-center">Mod Estructura</th>
+                                            <th class="pb-2 text-center">Final/Run</th>
+                                            <th class="pb-2 text-center">Cant. Reducida</th>
+                                            <th class="pb-2 text-right">Coste/Run</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="detailedBreakdownTable" class="divide-y divide-gray-800">
+                                        <!-- Rendered by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
 
                         <div class="mt-6 flex justify-end items-center border-t border-gray-700 pt-4">
@@ -256,6 +320,24 @@
 
                     </div>
 
+                    <!-- Margin Trend Chart (Hidden by default) -->
+                    <div id="marginChartContainer" class="hidden eve-card rounded-lg p-5 shadow-lg">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-bold text-white flex items-center">
+                                <i class="fa-solid fa-chart-line mr-2 text-gray-400"></i> Tendencia de Márgenes
+                            </h2>
+                            <button onclick="addCurrentMarginToHistory()" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded">
+                                <i class="fa-solid fa-plus mr-1"></i> Guardar Punto
+                            </button>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="marginChart"></canvas>
+                        </div>
+                        <div class="mt-4 text-xs text-gray-500">
+                            Historial de márgenes para este blueprint
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -270,6 +352,33 @@
                     <p class="text-sm text-gray-400">Edita aquí los precios de todos los materiales utilizados en tus blueprints. Los cambios se aplicarán automáticamente a todos los cálculos.</p>
                 </div>
 
+                <!-- CSV Import Section -->
+                <div class="mb-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+                    <h3 class="text-md font-bold text-white mb-2">Importar Precios desde CSV</h3>
+                    <div class="flex flex-col md:flex-row gap-2 items-center">
+                        <label class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-500 px-4 py-2 rounded text-sm btn-action flex items-center gap-2 cursor-pointer">
+                            <i class="fa-solid fa-file-csv"></i> Seleccionar CSV
+                            <input type="file" id="csvImport" class="hidden" accept=".csv" onchange="previewCSV(this)">
+                        </label>
+                        <span class="text-xs text-gray-400">Formato: material,precio (ej: Tritanium,6.25)</span>
+                    </div>
+                    
+                    <!-- CSV Preview -->
+                    <div id="csvPreview" class="hidden mt-4">
+                        <h4 class="text-sm font-bold text-white mb-2">Vista Previa:</h4>
+                        <div id="csvPreviewContent" class="csv-preview bg-gray-900/50 rounded p-3 text-xs"></div>
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="importCSVData()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded text-sm">
+                                <i class="fa-solid fa-check mr-2"></i> Importar
+                            </button>
+                            <button onclick="cancelCSVImport()" class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded text-sm">
+                                <i class="fa-solid fa-times mr-2"></i> Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Price Table -->
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-800 text-gray-400 uppercase text-xs font-bold">
@@ -285,10 +394,13 @@
                     </table>
                 </div>
 
-                <!-- NEW: Export TXT Button (Names Only) -->
-                <div class="mt-6 flex justify-end border-t border-gray-700 pt-4">
+                <!-- Export Buttons -->
+                <div class="mt-6 flex justify-between border-t border-gray-700 pt-4">
                     <button onclick="exportPriceListToTxt()" class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-500 px-4 py-2 rounded text-sm btn-action flex items-center gap-2">
                         <i class="fa-solid fa-file-lines"></i> Copiar Nombres (.txt)
+                    </button>
+                    <button onclick="copyMaterialsToClipboard()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm btn-action flex items-center gap-2">
+                        <i class="fa-solid fa-copy"></i> Copiar Nombres al Portapapeles
                     </button>
                 </div>
             </div>
@@ -301,18 +413,48 @@
                     <h2 class="text-xl font-bold text-white flex items-center mb-2">
                         <i class="fa-solid fa-list-check mr-2 text-gray-400"></i> Resumen de Rentabilidad
                     </h2>
-                    <p class="text-sm text-gray-400">Comparativa rápida de todos tus blueprints. Haz clic en el nombre para cargar la calculadora.</p>
+                    <div class="flex flex-col md:flex-row justify-between gap-4">
+                        <p class="text-sm text-gray-400">Comparativa rápida de todos tus blueprints. Haz clic en el nombre para cargar la calculadora.</p>
+                        
+                        <!-- Filter by Tags -->
+                        <div class="flex gap-2 items-center">
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Filtrar por etiqueta:</span>
+                            <select id="tagFilter" onchange="filterSummaryByTag()" class="eve-input text-sm px-2 py-1 rounded w-32">
+                                <option value="">Todas</option>
+                                <!-- Tags will be populated by JS -->
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-800 text-gray-400 uppercase text-xs font-bold">
                             <tr>
-                                <th class="p-3">Blueprint (Producto)</th>
-                                <th class="p-3 text-right">Coste/Ud</th>
-                                <th class="p-3 text-right">Precio Venta</th>
-                                <th class="p-3 text-right">Beneficio/Ud</th>
-                                <th class="p-3 text-right">Margen</th>
+                                <th class="p-3 sortable" onclick="sortSummary('name')">
+                                    Blueprint (Producto) 
+                                    <span id="sort-icon-name" class="sort-arrow"></span>
+                                </th>
+                                <th class="p-3 text-right sortable" onclick="sortSummary('tags')">
+                                    Etiquetas
+                                    <span id="sort-icon-tags" class="sort-arrow"></span>
+                                </th>
+                                <th class="p-3 text-right sortable" onclick="sortSummary('cost')">
+                                    Coste/Ud
+                                    <span id="sort-icon-cost" class="sort-arrow"></span>
+                                </th>
+                                <th class="p-3 text-right sortable" onclick="sortSummary('price')">
+                                    Precio Venta
+                                    <span id="sort-icon-price" class="sort-arrow"></span>
+                                </th>
+                                <th class="p-3 text-right sortable" onclick="sortSummary('profit')">
+                                    Beneficio/Ud
+                                    <span id="sort-icon-profit" class="sort-arrow"></span>
+                                </th>
+                                <th class="p-3 text-right sortable" onclick="sortSummary('margin')">
+                                    Margen
+                                    <span id="sort-icon-margin" class="sort-arrow"></span>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="summaryTable" class="divide-y divide-gray-700">
@@ -328,12 +470,17 @@
         </footer>
     </div>
 
+    <!-- Chart.js for trend chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <script>
         // --- GLOBAL STATE ---
         // -- DATA_MARKER_START --
         window.appState = {
             "currentId": "antimatter_m",
             "tax": 3.6,
+            "advancedMode": false,
+            "marginHistory": {}, // Store margin history per blueprint
             "blueprints": [
                 {
                     "id": "antimatter_m",
@@ -343,6 +490,7 @@
                     "structure": 0,
                     "installCost": 500,
                     "sellPrice": 25,
+                    "tags": ["ammo", "hybrid", "medium"],
                     "materials": [
                         { "name": "Tritanium", "qty": 449 },
                         { "name": "Pyerite", "qty": 417 },
@@ -355,11 +503,14 @@
                 "Pyerite": 10,
                 "Mexallon": 110
             },
-            "lockedPrices": {} // NEW: Stores lock state of prices
+            "lockedPrices": {}
         };
         // -- DATA_MARKER_END --
 
         let saveTimeout;
+        let currentCSVData = null;
+        let summarySort = { field: 'name', ascending: true };
+        let marginChart = null;
 
         // --- INIT ---
         function initApp() {
@@ -374,11 +525,27 @@
             if (!window.appState.lockedPrices) {
                 window.appState.lockedPrices = {};
             }
+            // Ensure marginHistory exists
+            if (!window.appState.marginHistory) {
+                window.appState.marginHistory = {};
+            }
+            // Ensure tags exist for all blueprints
+            window.appState.blueprints.forEach(bp => {
+                if (!bp.tags) bp.tags = [];
+            });
 
             renderApp();
             loadCurrentBlueprintInUI();
             updateMaterialDatalist();
             updateStatus('saved');
+            
+            // Set advanced mode toggle
+            document.getElementById('advancedModeToggle').checked = window.appState.advancedMode || false;
+            if (window.appState.advancedMode) {
+                document.getElementById('advancedBreakdown').classList.remove('hidden');
+                document.getElementById('marginChartContainer').classList.remove('hidden');
+                initMarginChart();
+            }
         }
 
         // --- NAVIGATION LOGIC ---
@@ -414,10 +581,270 @@
                 summaryView.classList.remove('hidden');
                 tabSum.classList.add('active');
                 renderSummaryTable();
+                updateTagFilter();
             }
         };
 
-        // --- NEW: SUMMARY & NAVIGATION HELPER ---
+        // --- ADVANCED MODE ---
+        window.toggleAdvancedMode = () => {
+            window.appState.advancedMode = !window.appState.advancedMode;
+            const advancedSection = document.getElementById('advancedBreakdown');
+            const chartSection = document.getElementById('marginChartContainer');
+            
+            if (window.appState.advancedMode) {
+                advancedSection.classList.remove('hidden');
+                chartSection.classList.remove('hidden');
+                initMarginChart();
+                renderDetailedBreakdown();
+            } else {
+                advancedSection.classList.add('hidden');
+                chartSection.classList.add('hidden');
+                if (marginChart) {
+                    marginChart.destroy();
+                    marginChart = null;
+                }
+            }
+            triggerSave();
+        };
+
+        // --- MARGIN HISTORY & CHART ---
+        window.addCurrentMarginToHistory = () => {
+            const bp = getCurrentBP();
+            if (!bp) return;
+            
+            const stats = getBlueprintStats(bp);
+            const now = new Date();
+            const timestamp = now.toISOString();
+            
+            if (!window.appState.marginHistory[bp.id]) {
+                window.appState.marginHistory[bp.id] = [];
+            }
+            
+            window.appState.marginHistory[bp.id].push({
+                timestamp,
+                margin: stats.margin,
+                profitPerUnit: stats.profitPerUnit,
+                costPerUnit: stats.costPerUnit,
+                sellPrice: stats.sellPrice
+            });
+            
+            // Keep only last 20 entries
+            if (window.appState.marginHistory[bp.id].length > 20) {
+                window.appState.marginHistory[bp.id] = window.appState.marginHistory[bp.id].slice(-20);
+            }
+            
+            saveToLocal();
+            updateMarginChart();
+        };
+
+        function initMarginChart() {
+            const ctx = document.getElementById('marginChart').getContext('2d');
+            const bp = getCurrentBP();
+            const history = window.appState.marginHistory[bp.id] || [];
+            
+            const labels = history.map((entry, index) => 
+                `Punto ${index + 1}`
+            );
+            
+            const margins = history.map(entry => entry.margin);
+            
+            marginChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Margen %',
+                        data: margins,
+                        borderColor: '#58a6ff',
+                        backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#c9d1d9' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: '#8b949e' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { 
+                                color: '#8b949e',
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateMarginChart() {
+            if (!marginChart) return;
+            
+            const bp = getCurrentBP();
+            const history = window.appState.marginHistory[bp.id] || [];
+            
+            const labels = history.map((entry, index) => 
+                `Punto ${index + 1}`
+            );
+            
+            const margins = history.map(entry => entry.margin);
+            
+            marginChart.data.labels = labels;
+            marginChart.data.datasets[0].data = margins;
+            marginChart.update();
+        }
+
+        // --- CSV IMPORT ---
+        window.previewCSV = (input) => {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const content = e.target.result;
+                const lines = content.split('\n').filter(line => line.trim());
+                
+                currentCSVData = [];
+                let previewHTML = '';
+                
+                lines.forEach((line, index) => {
+                    const [name, price] = line.split(',').map(item => item.trim());
+                    if (name && price && !isNaN(parseFloat(price))) {
+                        currentCSVData.push({ name, price: parseFloat(price) });
+                        previewHTML += `
+                            <div class="csv-row p-2 flex justify-between">
+                                <span class="text-gray-300">${name}</span>
+                                <span class="text-green-400 font-mono">${parseFloat(price).toFixed(2)} ISK</span>
+                            </div>
+                        `;
+                    }
+                });
+                
+                if (currentCSVData.length > 0) {
+                    document.getElementById('csvPreviewContent').innerHTML = previewHTML;
+                    document.getElementById('csvPreview').classList.remove('hidden');
+                } else {
+                    alert('No se encontraron datos válidos en el CSV.');
+                }
+            };
+            reader.readAsText(file);
+        };
+
+        window.importCSVData = () => {
+            if (!currentCSVData) return;
+            
+            currentCSVData.forEach(item => {
+                window.appState.prices[item.name] = item.price;
+            });
+            
+            saveToLocal();
+            renderPriceList();
+            calculate();
+            cancelCSVImport();
+            alert(`${currentCSVData.length} precios importados desde CSV.`);
+        };
+
+        window.cancelCSVImport = () => {
+            currentCSVData = null;
+            document.getElementById('csvPreview').classList.add('hidden');
+            document.getElementById('csvImport').value = '';
+        };
+
+        // --- COPY MATERIALS TO CLIPBOARD ---
+        window.copyMaterialsToClipboard = () => {
+            const prices = window.appState.prices;
+            const names = Object.keys(prices).sort();
+            let content = ""; 
+
+            if (names.length > 0) {
+                names.forEach(name => {
+                    content += `${name}\n`;
+                });
+            }
+
+            navigator.clipboard.writeText(content).then(() => {
+                alert('Lista de materiales copiada al portapapeles.');
+            }).catch(err => {
+                console.error('Error al copiar: ', err);
+                // Fallback method
+                const textArea = document.createElement('textarea');
+                textArea.value = content;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('Lista de materiales copiada al portapapeles.');
+            });
+        };
+
+        // --- SUMMARY SORTING ---
+        window.sortSummary = (field) => {
+            if (summarySort.field === field) {
+                summarySort.ascending = !summarySort.ascending;
+            } else {
+                summarySort.field = field;
+                summarySort.ascending = true;
+            }
+            renderSummaryTable();
+        };
+
+        function updateSortIcons() {
+            const fields = ['name', 'tags', 'cost', 'price', 'profit', 'margin'];
+            fields.forEach(f => {
+                const icon = document.getElementById(`sort-icon-${f}`);
+                if (icon) {
+                    icon.innerHTML = '';
+                    if (summarySort.field === f) {
+                        icon.innerHTML = summarySort.ascending ? '↑' : '↓';
+                    }
+                }
+            });
+        }
+
+        // --- TAG FILTERING ---
+        function updateTagFilter() {
+            const filter = document.getElementById('tagFilter');
+            if (!filter) return;
+            
+            // Collect all unique tags
+            const allTags = new Set();
+            window.appState.blueprints.forEach(bp => {
+                if (bp.tags) {
+                    bp.tags.forEach(tag => allTags.add(tag));
+                }
+            });
+            
+            // Keep existing selection
+            const currentValue = filter.value;
+            filter.innerHTML = '<option value="">Todas</option>';
+            
+            Array.from(allTags).sort().forEach(tag => {
+                const option = document.createElement('option');
+                option.value = tag;
+                option.textContent = tag;
+                filter.appendChild(option);
+            });
+            
+            // Restore selection
+            filter.value = currentValue;
+        }
+
+        window.filterSummaryByTag = () => {
+            renderSummaryTable();
+        };
+
+        // --- NEW: SELECT BLUEPRINT HELPER ---
         window.selectBlueprintAndSwitch = (id) => {
             switchBlueprint(id);
             switchView('calculator');
@@ -433,9 +860,9 @@
                 const meFactor = 1 - ((bp.me || 0) / 100);
                 const structFactor = 1 - ((bp.structure || 0) / 100);
                 
-                let totalBase = mat.qty * runs;
-                // Use same formula as main calculator
-                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
+                // CORRECTED FORMULA: Materials per run
+                let requiredPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
+                let totalReq = requiredPerRun * runs;
                 
                 const price = window.appState.prices[mat.name] || 0;
                 totalMatCost += totalReq * price;
@@ -451,7 +878,7 @@
             const profitPerUnit = netSell - costPerUnit;
             const margin = sellPrice > 0 ? (profitPerUnit / sellPrice) * 100 : 0;
 
-            return { profitPerUnit, margin, costPerUnit, sellPrice, netSell };
+            return { profitPerUnit, margin, costPerUnit, sellPrice, netSell, totalMatCost };
         }
 
         window.renderSummaryTable = () => {
@@ -460,14 +887,64 @@
 
             const bps = window.appState.blueprints || [];
             if (bps.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay blueprints registrados.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">No hay blueprints registrados.</td></tr>';
                 return;
             }
 
-            // Sort by name alphabetically
-            bps.sort((a, b) => a.name.localeCompare(b.name));
+            // Filter by tag if selected
+            const tagFilter = document.getElementById('tagFilter').value;
+            let filteredBPs = bps;
+            if (tagFilter) {
+                filteredBPs = bps.filter(bp => 
+                    bp.tags && bp.tags.includes(tagFilter)
+                );
+            }
 
-            bps.forEach(bp => {
+            // Sort
+            filteredBPs.sort((a, b) => {
+                const statsA = getBlueprintStats(a);
+                const statsB = getBlueprintStats(b);
+                let aVal, bVal;
+                
+                switch (summarySort.field) {
+                    case 'name':
+                        aVal = a.name.toLowerCase();
+                        bVal = b.name.toLowerCase();
+                        break;
+                    case 'tags':
+                        aVal = (a.tags || []).join(', ').toLowerCase();
+                        bVal = (b.tags || []).join(', ').toLowerCase();
+                        break;
+                    case 'cost':
+                        aVal = statsA.costPerUnit;
+                        bVal = statsB.costPerUnit;
+                        break;
+                    case 'price':
+                        aVal = statsA.sellPrice;
+                        bVal = statsB.sellPrice;
+                        break;
+                    case 'profit':
+                        aVal = statsA.profitPerUnit;
+                        bVal = statsB.profitPerUnit;
+                        break;
+                    case 'margin':
+                        aVal = statsA.margin;
+                        bVal = statsB.margin;
+                        break;
+                    default:
+                        aVal = a.name;
+                        bVal = b.name;
+                }
+                
+                if (typeof aVal === 'string') {
+                    return summarySort.ascending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                } else {
+                    return summarySort.ascending ? aVal - bVal : bVal - aVal;
+                }
+            });
+
+            // Render
+            filteredBPs.forEach(bp => {
                 const stats = getBlueprintStats(bp);
                 const isProfitable = stats.profitPerUnit >= 0;
                 const profitClass = isProfitable ? 'text-green-400' : 'text-red-500';
@@ -477,11 +954,21 @@
                 
                 const fmt = (num) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 
+                // Format tags
+                const tagsHTML = (bp.tags || []).map(tag => 
+                    `<span class="tag text-xs px-2 py-1 rounded mr-1">${tag}</span>`
+                ).join('');
+
                 tr.innerHTML = `
                     <td class="p-3">
                         <button onclick="selectBlueprintAndSwitch('${bp.id}')" class="font-bold text-blue-400 hover:text-white hover:underline text-left">
                             ${bp.name}
                         </button>
+                    </td>
+                    <td class="p-3 text-right">
+                        <div class="flex flex-wrap gap-1 justify-end">
+                            ${tagsHTML || '<span class="text-gray-500 text-xs">sin etiquetas</span>'}
+                        </div>
                     </td>
                     <td class="p-3 text-right font-mono text-gray-400">${fmt(stats.costPerUnit)}</td>
                     <td class="p-3 text-right font-mono text-gray-300">${fmt(stats.sellPrice)}</td>
@@ -490,7 +977,47 @@
                 `;
                 tbody.appendChild(tr);
             });
+
+            updateSortIcons();
         };
+
+        // --- DETAILED BREAKDOWN ---
+        function renderDetailedBreakdown() {
+            if (!window.appState.advancedMode) return;
+            
+            const tbody = document.getElementById('detailedBreakdownTable');
+            tbody.innerHTML = '';
+            
+            const bp = getCurrentBP();
+            const runs = parseInt(document.getElementById('jobRuns').value) || 1;
+            
+            bp.materials.forEach((mat, index) => {
+                const price = window.appState.prices[mat.name] || 0;
+                const meFactor = 1 - (bp.me / 100);
+                const structFactor = 1 - (bp.structure / 100);
+                
+                // Calculate per run values
+                let requiredPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
+                let totalReq = requiredPerRun * runs;
+                let costPerRun = requiredPerRun * price;
+                let reductionPercent = ((mat.qty - requiredPerRun) / mat.qty) * 100;
+                
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/5 text-xs";
+                tr.innerHTML = `
+                    <td class="py-2 pl-2 font-medium text-gray-300">${mat.name}</td>
+                    <td class="text-center font-mono text-gray-400">${mat.qty}</td>
+                    <td class="text-center font-mono text-blue-400">${(meFactor * 100).toFixed(1)}%</td>
+                    <td class="text-center font-mono text-blue-400">${(structFactor * 100).toFixed(1)}%</td>
+                    <td class="text-center font-mono text-white font-bold">${requiredPerRun}</td>
+                    <td class="text-center font-mono ${reductionPercent > 0 ? 'text-green-400' : 'text-gray-500'}">
+                        ${reductionPercent > 0 ? `-${reductionPercent.toFixed(1)}%` : '0%'}
+                    </td>
+                    <td class="text-right font-mono text-gray-400">${costPerRun.toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
 
         // --- AUTOCOMPLETE LOGIC ---
         window.updateMaterialDatalist = () => {
@@ -507,7 +1034,7 @@
             });
         };
 
-        // --- NEW: PRICE LOCK LOGIC ---
+        // --- PRICE LOCK LOGIC ---
         window.togglePriceLock = (matName) => {
             if (!window.appState.lockedPrices) window.appState.lockedPrices = {};
             
@@ -518,7 +1045,7 @@
             renderPriceList();
         };
 
-        // --- PRICE LIST LOGIC (Updated with Locks) ---
+        // --- PRICE LIST LOGIC ---
         window.renderPriceList = () => {
             const tbody = document.getElementById('globalPriceTable');
             tbody.innerHTML = '';
@@ -567,7 +1094,7 @@
             });
         };
 
-        // --- EXPORT TXT LOGIC (UPDATED: ONLY NAMES) ---
+        // --- EXPORT TXT LOGIC ---
         window.exportPriceListToTxt = () => {
             const prices = window.appState.prices;
             const names = Object.keys(prices).sort();
@@ -632,6 +1159,7 @@
                         if (confirm('¿Cargar datos? Se sobrescribirá la configuración actual.')) {
                             window.appState = data;
                             if (typeof window.appState.tax === 'undefined') window.appState.tax = 3.6;
+                            if (!window.appState.marginHistory) window.appState.marginHistory = {};
                             
                             saveToLocal();
                             renderApp();
@@ -705,22 +1233,27 @@
             select.value = window.appState.currentId;
         }
 
-        // --- FIX: SAFE BLUEPRINT SWITCHING ---
+        // --- BLUEPRINT SWITCHING ---
         window.switchBlueprint = (id) => {
-            // 1. Save state of current BP (old ID)
+            // Save state of current BP
             calculate(); 
             
-            // 2. Switch the active ID
+            // Switch the active ID
             window.appState.currentId = id;
 
-            // 3. FORCE UPDATE THE DROPDOWN VISUAL TO MATCH NEW ID
+            // Update dropdown
             const selector = document.getElementById('blueprintSelector');
             if (selector) selector.value = id;
 
-            // 4. Update the UI inputs with the *new* blueprint's values
+            // Update UI
             loadCurrentBlueprintInUI();
             
-            // 5. Save
+            // Update chart if advanced mode
+            if (window.appState.advancedMode && marginChart) {
+                updateMarginChart();
+            }
+            
+            // Save
             saveToLocal();
         };
 
@@ -739,6 +1272,7 @@
                 structure: 0.0,
                 installCost: 1000, 
                 sellPrice: 0, 
+                tags: [],
                 materials: []
             });
             window.appState.currentId = newId;
@@ -796,11 +1330,16 @@
             document.getElementById('sellPrice').value = bp.sellPrice;
             document.getElementById('salesTax').value = window.appState.tax;
             document.getElementById('jobRuns').value = 1;
+            document.getElementById('tags').value = bp.tags ? bp.tags.join(', ') : '';
             renderMaterialsTable();
             calculate();
+            
+            // Update advanced breakdown if visible
+            if (window.appState.advancedMode) {
+                renderDetailedBreakdown();
+            }
         }
 
-        // --- UPDATED RENDER FUNCTION WITH LOCK CHECK ---
         function renderMaterialsTable() {
             const bp = getCurrentBP();
             const tbody = document.getElementById('materialsTable');
@@ -851,9 +1390,13 @@
             triggerSave();
         };
 
-        // --- UPDATED CALCULATE FUNCTION ---
+        // --- UPDATED CALCULATE FUNCTION WITH CORRECTED FORMULA ---
         window.calculate = () => {
             const bp = getCurrentBP();
+            
+            // Save tags
+            const tagsInput = document.getElementById('tags').value;
+            bp.tags = tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag);
             
             bp.me = parseInt(document.getElementById('meLevel').value) || 0;
             bp.yield = parseInt(document.getElementById('baseYield').value) || 1;
@@ -869,11 +1412,9 @@
                 const meFactor = 1 - (bp.me / 100);
                 const structFactor = 1 - (bp.structure / 100);
                 
-                // CORRECT FORMULA: Round up based on TOTAL job quantity, not per run
-                // Total Requirement = Max(Runs, Ceil(BaseQty * Runs * ME_Modifier * Structure_Modifier))
-                
-                let totalBase = mat.qty * runs;
-                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
+                // CORRECT FORMULA: Materials per run, then multiply by runs
+                let requiredPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
+                let totalReq = requiredPerRun * runs;
                 
                 const cost = totalReq * (window.appState.prices[mat.name] || 0);
                 totalMatCost += cost;
@@ -909,6 +1450,11 @@
             const marginEl = document.getElementById('marginPercent');
             marginEl.innerText = margin.toFixed(1) + '%';
             marginEl.className = margin > 0 ? 'text-green-400' : 'text-red-500';
+            
+            // Update detailed breakdown if advanced mode
+            if (window.appState.advancedMode) {
+                renderDetailedBreakdown();
+            }
         };
 
         initApp();
