@@ -175,10 +175,10 @@
                                 <input type="number" id="installCost" min="0" class="eve-input w-full rounded p-2 text-right font-bold text-yellow-500" oninput="triggerSave()">
                             </div>
 
-                            <!-- NEW: Tags Input -->
+                            <!-- Tags Input -->
                             <div>
                                 <label class="block text-xs text-gray-400 mb-1 uppercase">Etiquetas</label>
-                                <input type="text" id="tags" placeholder="Separadas por comas (ej: ammo, small, hybrid)" class="eve-input w-full rounded p-2" oninput="triggerSave()">
+                                <input type="text" id="tags" placeholder="Separadas por comas (ej: ammo, small)" class="eve-input w-full rounded p-2" oninput="triggerSave()">
                                 <p class="text-xs text-gray-600 mt-1">Para organizar/filtrar en el resumen</p>
                             </div>
 
@@ -265,18 +265,18 @@
 
                         <!-- Advanced Materials Breakdown (Hidden by default) -->
                         <div id="advancedBreakdown" class="hidden mt-6 border-t border-gray-700 pt-4">
-                            <h3 class="text-lg font-bold text-white mb-3">Desglose Detallado por Run</h3>
+                            <h3 class="text-lg font-bold text-white mb-3">Desglose Detallado (Total Job)</h3>
                             <div class="overflow-x-auto">
                                 <table class="w-full text-left text-xs">
                                     <thead>
                                         <tr class="text-gray-500 border-b border-gray-700 uppercase tracking-wider">
                                             <th class="pb-2 pl-2">Material</th>
-                                            <th class="pb-2 text-center">Base/Run</th>
+                                            <th class="pb-2 text-center">Total Base</th>
                                             <th class="pb-2 text-center">Mod ME</th>
-                                            <th class="pb-2 text-center">Mod Estructura</th>
-                                            <th class="pb-2 text-center">Final/Run</th>
-                                            <th class="pb-2 text-center">Cant. Reducida</th>
-                                            <th class="pb-2 text-right">Coste/Run</th>
+                                            <th class="pb-2 text-center">Mod Estr.</th>
+                                            <th class="pb-2 text-center">Total Final</th>
+                                            <th class="pb-2 text-center">Ahorro</th>
+                                            <th class="pb-2 text-right">Coste Total</th>
                                         </tr>
                                     </thead>
                                     <tbody id="detailedBreakdownTable" class="divide-y divide-gray-800">
@@ -521,14 +521,10 @@
                     window.appState = { ...window.appState, ...loaded };
                 } catch(e) { console.error("Error loading local save"); }
             }
-            // Ensure lockedPrices exists
-            if (!window.appState.lockedPrices) {
-                window.appState.lockedPrices = {};
-            }
-            // Ensure marginHistory exists
-            if (!window.appState.marginHistory) {
-                window.appState.marginHistory = {};
-            }
+            // Ensure data structures exist
+            if (!window.appState.lockedPrices) window.appState.lockedPrices = {};
+            if (!window.appState.marginHistory) window.appState.marginHistory = {};
+            
             // Ensure tags exist for all blueprints
             window.appState.blueprints.forEach(bp => {
                 if (!bp.tags) bp.tags = [];
@@ -540,11 +536,17 @@
             updateStatus('saved');
             
             // Set advanced mode toggle
-            document.getElementById('advancedModeToggle').checked = window.appState.advancedMode || false;
-            if (window.appState.advancedMode) {
-                document.getElementById('advancedBreakdown').classList.remove('hidden');
-                document.getElementById('marginChartContainer').classList.remove('hidden');
-                initMarginChart();
+            const advToggle = document.getElementById('advancedModeToggle');
+            if(advToggle) {
+                advToggle.checked = window.appState.advancedMode || false;
+                if (window.appState.advancedMode) {
+                    document.getElementById('advancedBreakdown').classList.remove('hidden');
+                    document.getElementById('marginChartContainer').classList.remove('hidden');
+                    // Safety check for chart.js loading
+                    if(typeof Chart !== 'undefined') {
+                        initMarginChart();
+                    }
+                }
             }
         }
 
@@ -594,8 +596,8 @@
             if (window.appState.advancedMode) {
                 advancedSection.classList.remove('hidden');
                 chartSection.classList.remove('hidden');
-                initMarginChart();
                 renderDetailedBreakdown();
+                if(typeof Chart !== 'undefined') initMarginChart();
             } else {
                 advancedSection.classList.add('hidden');
                 chartSection.classList.add('hidden');
@@ -638,6 +640,8 @@
         };
 
         function initMarginChart() {
+            if(typeof Chart === 'undefined') return;
+            
             const ctx = document.getElementById('marginChart').getContext('2d');
             const bp = getCurrentBP();
             const history = window.appState.marginHistory[bp.id] || [];
@@ -648,6 +652,8 @@
             
             const margins = history.map(entry => entry.margin);
             
+            if(marginChart) marginChart.destroy();
+
             marginChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -689,7 +695,10 @@
         }
 
         function updateMarginChart() {
-            if (!marginChart) return;
+            if (!marginChart) {
+                if(window.appState.advancedMode) initMarginChart();
+                return;
+            }
             
             const bp = getCurrentBP();
             const history = window.appState.marginHistory[bp.id] || [];
@@ -777,7 +786,6 @@
                 alert('Lista de materiales copiada al portapapeles.');
             }).catch(err => {
                 console.error('Error al copiar: ', err);
-                // Fallback method
                 const textArea = document.createElement('textarea');
                 textArea.value = content;
                 document.body.appendChild(textArea);
@@ -860,9 +868,13 @@
                 const meFactor = 1 - ((bp.me || 0) / 100);
                 const structFactor = 1 - ((bp.structure || 0) / 100);
                 
-                // CORRECTED FORMULA: Materials per run
-                let requiredPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
-                let totalReq = requiredPerRun * runs;
+                // Formula: Per run calculation to match main window logic
+                let totalBase = mat.qty * runs;
+                // Use TOTAL rounding to save materials (Standard behavior)
+                // Note: For unit cost display, we assume 1 run, but ideally we'd use total runs config.
+                // Since this is summary, we assume optimal (1 run calc) or simply unit price.
+                // To match calculate():
+                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
                 
                 const price = window.appState.prices[mat.name] || 0;
                 totalMatCost += totalReq * price;
@@ -981,7 +993,7 @@
             updateSortIcons();
         };
 
-        // --- DETAILED BREAKDOWN ---
+        // --- DETAILED BREAKDOWN (UPDATED TO SHOW TOTALS) ---
         function renderDetailedBreakdown() {
             if (!window.appState.advancedMode) return;
             
@@ -996,24 +1008,24 @@
                 const meFactor = 1 - (bp.me / 100);
                 const structFactor = 1 - (bp.structure / 100);
                 
-                // Calculate per run values
-                let requiredPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
-                let totalReq = requiredPerRun * runs;
-                let costPerRun = requiredPerRun * price;
-                let reductionPercent = ((mat.qty - requiredPerRun) / mat.qty) * 100;
+                // Calculate TOTAL values for the job
+                let totalBase = mat.qty * runs;
+                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
+                let totalCost = totalReq * price;
+                let reductionPercent = ((totalBase - totalReq) / totalBase) * 100;
                 
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-white/5 text-xs";
                 tr.innerHTML = `
                     <td class="py-2 pl-2 font-medium text-gray-300">${mat.name}</td>
-                    <td class="text-center font-mono text-gray-400">${mat.qty}</td>
+                    <td class="text-center font-mono text-gray-400">${totalBase.toLocaleString()}</td>
                     <td class="text-center font-mono text-blue-400">${(meFactor * 100).toFixed(1)}%</td>
                     <td class="text-center font-mono text-blue-400">${(structFactor * 100).toFixed(1)}%</td>
-                    <td class="text-center font-mono text-white font-bold">${requiredPerRun}</td>
+                    <td class="text-center font-mono text-white font-bold">${totalReq.toLocaleString()}</td>
                     <td class="text-center font-mono ${reductionPercent > 0 ? 'text-green-400' : 'text-gray-500'}">
                         ${reductionPercent > 0 ? `-${reductionPercent.toFixed(1)}%` : '0%'}
                     </td>
-                    <td class="text-right font-mono text-gray-400">${costPerRun.toFixed(2)}</td>
+                    <td class="text-right font-mono text-gray-400">${totalCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -1159,7 +1171,6 @@
                         if (confirm('¿Cargar datos? Se sobrescribirá la configuración actual.')) {
                             window.appState = data;
                             if (typeof window.appState.tax === 'undefined') window.appState.tax = 3.6;
-                            if (!window.appState.marginHistory) window.appState.marginHistory = {};
                             
                             saveToLocal();
                             renderApp();
@@ -1235,25 +1246,25 @@
 
         // --- BLUEPRINT SWITCHING ---
         window.switchBlueprint = (id) => {
-            // Save state of current BP
+            // 1. Save state of current BP (old ID)
             calculate(); 
             
-            // Switch the active ID
+            // 2. Switch the active ID
             window.appState.currentId = id;
 
-            // Update dropdown
+            // 3. FORCE UPDATE THE DROPDOWN VISUAL TO MATCH NEW ID
             const selector = document.getElementById('blueprintSelector');
             if (selector) selector.value = id;
 
-            // Update UI
+            // 4. Update the UI inputs with the *new* blueprint's values
             loadCurrentBlueprintInUI();
             
-            // Update chart if advanced mode
+            // 5. Update chart if advanced mode
             if (window.appState.advancedMode && marginChart) {
                 updateMarginChart();
             }
             
-            // Save
+            // 6. Save
             saveToLocal();
         };
 
@@ -1334,12 +1345,12 @@
             renderMaterialsTable();
             calculate();
             
-            // Update advanced breakdown if visible
             if (window.appState.advancedMode) {
                 renderDetailedBreakdown();
             }
         }
 
+        // --- RENDER MATERIALS TABLE ---
         function renderMaterialsTable() {
             const bp = getCurrentBP();
             const tbody = document.getElementById('materialsTable');
@@ -1390,7 +1401,7 @@
             triggerSave();
         };
 
-        // --- UPDATED CALCULATE FUNCTION WITH CORRECTED FORMULA ---
+        // --- UPDATED CALCULATE FUNCTION ---
         window.calculate = () => {
             const bp = getCurrentBP();
             
@@ -1412,9 +1423,11 @@
                 const meFactor = 1 - (bp.me / 100);
                 const structFactor = 1 - (bp.structure / 100);
                 
-                // CORRECT FORMULA: Materials per run, then multiply by runs
-                let requiredPerRun = Math.max(1, Math.ceil(mat.qty * meFactor * structFactor));
-                let totalReq = requiredPerRun * runs;
+                // CORRECT FORMULA: Round up based on TOTAL job quantity, not per run
+                // Total Requirement = Max(Runs, Ceil(BaseQty * Runs * ME_Modifier * Structure_Modifier))
+                
+                let totalBase = mat.qty * runs;
+                let totalReq = Math.max(runs, Math.ceil(totalBase * meFactor * structFactor));
                 
                 const cost = totalReq * (window.appState.prices[mat.name] || 0);
                 totalMatCost += cost;
